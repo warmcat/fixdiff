@@ -24,13 +24,36 @@
  * See ./README.md for build and usage information.
  *
  */
+#define _CRT_SECURE_NO_WARNINGS
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#if !defined(WIN32)
 #include <unistd.h>
+#define TO_POSLEN(x) (x)
+#else
+#include <windows.h>
+#include <processthreadsapi.h>
+#include <BaseTsd.h>
+#include <io.h>
+#include <direct.h>
+#define ssize_t SSIZE_T
+#define open _open
+#define read _read
+#define lseek _lseek
+#define close _close
+#define write _write
+#define getpid GetCurrentProcessId
+#define chdir _chdir
+#define unlink _unlink
+typedef unsigned long pid_t;
+#define TO_POSLEN(x) (unsigned int)(x)
+#endif
 #include <fcntl.h>
 #include <errno.h>
+#include <stddef.h>
+#include <stdint.h>
 
 #include <sys/types.h>
 
@@ -88,20 +111,12 @@ typedef struct {
 
 static dp_t dp;
 
-#if defined(_DEBUG)
-static const char *state_names[] = {
-	"DSS_WAIT_MMM",
-	"DSS_MUST_PPP",
-	"DSS_MUST_AA",
-	"DSS_AA_OR_MMM",
-	"DSS_PMSAD",
-};
-#endif
-
 static void
 init_lbuf(lbuf_t *plb, const char *name)
 {
-	plb->li = plb->bpos = plb->blen = 0;
+	plb->li = 0;
+	plb->bpos = 0;
+	plb->blen = 0;
 	plb->ro = 0;
 	plb->name = name;
 }
@@ -210,8 +225,8 @@ fixdiff_find_original(dp_t *pdp, int *line_start)
 {
 	char in_src[4096], in_temp[4096], hit = 0;
 	lbuf_t lb_temp, lb_src, lb;
-	int ret = 1, n;
 	size_t lt, ls;
+	int ret = 1;
 
 	/*
 	 * We need to confirm the correct place in the file with the unchanged
@@ -243,7 +258,7 @@ fixdiff_find_original(dp_t *pdp, int *line_start)
 	}
 
 	/* the correct starting point in the temp stanza file */
-	pdp->flo = lb_temp.ro + lb_temp.bpos;
+	pdp->flo = (off_t)(lb_temp.ro + lb_temp.bpos);
 
 	init_lbuf(&lb_src, "src");
 	lb_src.fd = open(pdp->pf, O_RDONLY);
@@ -264,7 +279,7 @@ fixdiff_find_original(dp_t *pdp, int *line_start)
 		init_lbuf(&lb, "src_comp");
 		lb.fd = open(pdp->pf, O_RDONLY);
 		lb.li = lb_src.li;
-		lseek(lb.fd, lb_src.ro + lb_src.bpos, SEEK_SET);
+		lseek(lb.fd, (off_t)(lb_src.ro + lb_src.bpos), SEEK_SET);
 
 		init_lbuf(&lb_temp, "lb_temp");
 		lseek(lb_temp.fd, pdp->flo, SEEK_SET);
@@ -309,7 +324,7 @@ fixdiff_find_original(dp_t *pdp, int *line_start)
 			init_lbuf(&lb_ef, "end_fill");
 			lb_ef.fd = open(pdp->pf, O_RDONLY);
 			lb_ef.li = lb.li;
-			lseek(lb_ef.fd, lb.bls, SEEK_SET);
+			lseek(lb_ef.fd, (off_t)lb.bls, SEEK_SET);
 
 			/*
 			 * Suspected patch at EOF
@@ -327,7 +342,8 @@ fixdiff_find_original(dp_t *pdp, int *line_start)
 
 				in_src[0] = ' ';
 				lseek(lb_temp.fd, 0, SEEK_END);
-				if (write(lb_temp.fd, in_src, strlen(in_src)) != (ssize_t)strlen(in_src)) {
+				if (write(lb_temp.fd, in_src, TO_POSLEN(strlen(in_src))) !=
+									(ssize_t)strlen(in_src)) {
 					close(lb_ef.fd);
 					pdp->reason = "failed to write extra stanza trailer to temp file";
 					ret = 1;
@@ -358,7 +374,7 @@ static int
 fixdiff_stanza_end(dp_t *pdp)
 {
 	char buf[256];
-	int orig, n;
+	int orig;
 
 	if (!pdp->ongoing)
 		return 0;
@@ -392,7 +408,7 @@ fixdiff_stanza_end(dp_t *pdp)
 		pdp->bad++;
 	}
 
-	if (write(1, buf, strlen(buf)) != (ssize_t)strlen(buf)) {
+	if (write(1, buf, TO_POSLEN(strlen(buf))) != (ssize_t)strlen(buf)) {
 		pdp->reason = "failed to write stanza header to stdout";
 		return 1;
 	}
@@ -405,7 +421,7 @@ fixdiff_stanza_end(dp_t *pdp)
 		if (!l)
 			break;
 
-		if (write(1, buf, l) != (ssize_t)l) {
+		if (write(1, buf, TO_POSLEN(l)) != (ssize_t)l) {
 			pdp->reason = "failed to write to stdout";
 			return 1;
 		}
@@ -455,11 +471,6 @@ main(int argc, char *argv[])
 				goto bail;
 			break;
 		}
-
-#if defined(_DEBUG)
-		fprintf(stderr, "%d: %s: (%d) %s\n", dp.li,
-				state_names[dp.d], (int)l, in);
-#endif
 
 		switch (dp.d) {
 		case DSS_WAIT_MMM:
@@ -604,7 +615,7 @@ main(int argc, char *argv[])
 			continue;
 		}
 
-		w = write(dp.fd_temp != -1 ? dp.fd_temp : 1, in, l);
+		w = write(dp.fd_temp != -1 ? dp.fd_temp : 1, in, TO_POSLEN(l));
 		if (w < 0) {
 			fprintf(stderr, "write to stdout failed: %d\n", errno);
 			goto bail;
