@@ -32,6 +32,7 @@
 #if !defined(WIN32)
 #include <unistd.h>
 #define TO_POSLEN(x) (x)
+#define OFLAGS(x) (x)
 #else
 #include <windows.h>
 #include <processthreadsapi.h>
@@ -49,6 +50,7 @@
 #define unlink _unlink
 typedef unsigned long pid_t;
 #define TO_POSLEN(x) (unsigned int)(x)
+#define OFLAGS(x) (_O_BINARY | (x))
 #endif
 #include <fcntl.h>
 #include <errno.h>
@@ -121,6 +123,86 @@ init_lbuf(lbuf_t *plb, const char *name)
 	plb->name = name;
 }
 
+static void
+hexdump(void *start, size_t len)
+{
+	static const char *hexchar = "0123456789abcdef";
+	int n = 0, a = 0, used = 0, us = 0;
+	uint8_t *p = (uint8_t *)start;
+	char str[50], asc[17];
+
+	memset(str, ' ', 48);
+	memset(asc, ' ', 16);
+	str[48] = '\0';
+	asc[16] = '\0';
+
+	while (len) {
+		len--;
+		if (a == 16) {
+			fprintf(stderr, "%04X: %s  %s\n", us, str, asc);
+			memset(str, ' ', 48);
+			memset(asc, ' ', 16);
+			a = 0;
+			us = used;
+		}
+
+		str[a * 3] = hexchar[(*p) >> 4];
+		str[(a * 3) + 1] = hexchar[(*p) & 15];
+
+		if (*p < 32)
+			asc[a] = '.';
+		else
+			asc[a] = (char)*p;
+
+		a++;
+		p++;
+		used++;
+	}
+	if (a)
+		fprintf(stderr, "%04X: %s  %s\n", us, str, asc);
+}
+
+/*
+ * It's strcmp, but it is smart about matching a mixure of line endings
+ */
+
+typedef enum {
+	LE_ZERO,
+	LE_0A,
+	LE_0D0A
+} line_ending_t;
+
+static int
+fixdiff_strcmp(const char *a, size_t alen, line_ending_t *lea, const char *b, size_t blen, line_ending_t *leb)
+{
+	*lea = *leb = LE_ZERO;
+	if (alen >= 2 && a[alen - 2] == 0x0d && a[alen - 1] == 0x0a)
+		*lea = LE_0D0A;
+	else
+		if (alen >= 1 && a[alen - 1] == 0x0a)
+			*lea = LE_0A;
+
+	if (blen >= 2 && b[blen - 2] == 0x0d && b[blen - 1] == 0x0a)
+		*leb = LE_0D0A;
+	else
+		if (blen >= 1 && b[blen - 1] == 0x0a)
+			*leb = LE_0A;
+
+	// fprintf(stderr, "%d %d (%d %d)\n", *lea, *leb, (int)(alen - *lea), (int)(blen - *leb));
+
+	if (alen - *lea != blen - *leb)
+		return 1;
+
+	if ((*lea == LE_ZERO && *leb != LE_ZERO) ||
+	    (*lea != LE_ZERO && *leb == LE_ZERO))
+		return 1; /* mismatch */
+
+	if (alen - *lea == 0)
+		return 0;
+
+	return memcmp(a, b, alen - *lea);
+}
+
 static size_t
 fixdiff_get_line(lbuf_t *plb, char *buf, size_t len)
 {
@@ -173,7 +255,7 @@ _mkstemp(char *tmp, size_t len)
 
 	snprintf(tmp + strlen(tmp), len - strlen(tmp) - 1, "%d", (int)pi);
 
-	fd = open(tmp, O_CREAT | O_TRUNC | O_RDWR, 0600);
+	fd = open(tmp, OFLAGS(O_CREAT | O_TRUNC | O_RDWR), 0600);
 
 	return fd;
 }
@@ -236,7 +318,7 @@ fixdiff_find_original(dp_t *pdp, int *line_start)
 	lb_src.fd = lb.fd = -1;
 
 	init_lbuf(&lb_temp, "temp");
-	lb_temp.fd = open(pdp->temp, O_RDWR);
+	lb_temp.fd = open(pdp->temp, OFLAGS(O_RDWR));
 
 	/*
 	 * The idea is to set the starting point in the temp stanza for
@@ -261,7 +343,7 @@ fixdiff_find_original(dp_t *pdp, int *line_start)
 	pdp->flo = (off_t)(lb_temp.ro + lb_temp.bpos);
 
 	init_lbuf(&lb_src, "src");
-	lb_src.fd = open(pdp->pf, O_RDONLY);
+	lb_src.fd = open(pdp->pf, OFLAGS(O_RDONLY));
 	if (lb_src.fd < 0) {
 		fprintf(stderr, "%s: Unable to open: %s: %d\n",
 			__func__, pdp->pf, errno);
@@ -275,9 +357,10 @@ fixdiff_find_original(dp_t *pdp, int *line_start)
 	 */
 
 	while (!hit) {
+		line_ending_t let, les;
 
 		init_lbuf(&lb, "src_comp");
-		lb.fd = open(pdp->pf, O_RDONLY);
+		lb.fd = open(pdp->pf, OFLAGS(O_RDONLY));
 		lb.li = lb_src.li;
 		lseek(lb.fd, (off_t)(lb_src.ro + lb_src.bpos), SEEK_SET);
 
@@ -300,8 +383,12 @@ fixdiff_find_original(dp_t *pdp, int *line_start)
 
 			} while (in_temp[0] == '+');
 
-			if (hit || lt - 1 != ls ||
-			    strncmp(in_temp + 1, in_src, ls))
+			// fprintf(stderr, "comp (%d) '%s' (%d) '%s'\n", (int)lt, in_temp, (int)ls, in_src);
+			// hexdump(in_temp, lt);
+			// hexdump(in_src, ls);
+			if (hit)
+				break;
+			if (fixdiff_strcmp(in_temp + 1, lt - 1, &let, in_src, ls, &les))
 				break;
 		}
 
@@ -322,7 +409,7 @@ fixdiff_find_original(dp_t *pdp, int *line_start)
 			int a = 0;
 
 			init_lbuf(&lb_ef, "end_fill");
-			lb_ef.fd = open(pdp->pf, O_RDONLY);
+			lb_ef.fd = open(pdp->pf, OFLAGS(O_RDONLY));
 			lb_ef.li = lb.li;
 			lseek(lb_ef.fd, (off_t)lb.bls, SEEK_SET);
 
