@@ -1,0 +1,39 @@
+{
+	"schema": "sai-1",
+
+	# We're doing separate install into destdir so that the test server
+	# has somewhere to go to find its /usr/share content like certs
+
+	"platforms": {
+		"rocky9/aarch64-a72a55-rk3588/gcc": {
+			"build": "mkdir build destdir;cd build;export CCACHE_DISABLE=1;cmake .. ${cmake} && rm -rf ../destdir && make -j DESTDIR=../destdir install && ctest -j2 --output-on-failure"
+		},
+		"netbsd-OSX-bigsur/x86_64-intel-i3/llvm": {
+			"build": "mkdir build destdir; cd build;export MACOSX_DEPLOYMENT_TARGET=10.15 ; cmake .. -DCMAKE_MAKE_PROGRAM=/usr/bin/make  ${cmake} && make && make -j DESTDIR=../destdir install && ctest -j2 --output-on-failure"
+		},
+		"ubuntu-noble/riscv64/gcc": {
+			"build": "mkdir build destdir;cd build;export CCACHE_DISABLE=1;cmake .. ${cmake} && make && rm -rf ../destdir && make DESTDIR=../destdir install && ctest -j2 --output-on-failure"
+		},
+		"rocky9/x86_64-amd/gcc": {
+                        "build": "mkdir build destdir;cd build;export CCACHE_DISABLE=1;cmake .. ${cmake} && make && rm -rf ../destdir && make DESTDIR=../destdir install && ctest -j2 --output-on-failure"
+		},
+		"linux-ubuntu-2404/aarch64-a72-bcm2711-rpi4/gcc": {
+                        "build": "mkdir build destdir;cd build;export CCACHE_DISABLE=1;cmake .. ${cmake} && make && rm -rf ../destdir && make DESTDIR=../destdir install && ctest -j2 --output-on-failure"
+		},
+                "netbsd/aarch64BE-bcm2837-a53/gcc": {
+                        "build": "mkdir build destdir;cd build;export CCACHE_DISABLE=1;cmake .. ${cmake};make && rm -rf ../destdir && make DESTDIR=../destdir install && /usr/pkg/bin/ctest --output-on-failure",
+                        "default": false
+                },
+		"w11/x86_64-amd/msvc": {
+			"build": "mkdir build && cd build && cmake .. ${cmake} && cmake --build . --config DEBUG && set CTEST_OUTPUT_ON_FAILURE=1 && ctest . -C DEBUG -j1 --output-on-failure",
+			"default": false
+		}
+	},
+	"configurations": {
+		"default": {
+			"cmake":	"",
+			"platforms":	"w11/x86_64-amd/msvc,netbsd/aarch64BE-bcm2837-a53/gcc"
+		}
+	}
+}
+
