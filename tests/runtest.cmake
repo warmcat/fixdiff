@@ -1,5 +1,5 @@
 
-function(patch_check CMD SRC PATCH EXPSHA)
+function(patch_check CMD SRC PATCH EXPSHA EXPSHA_WIN)
 	file(COPY_FILE ${SRC}-orig ${SRC})
 
 	execute_process(COMMAND cat ${PATCH}
@@ -14,9 +14,12 @@ function(patch_check CMD SRC PATCH EXPSHA)
 
 	if ( "${RESULT_SHA256}" STREQUAL "${EXPSHA}" )
 	else()
-		message(FATAL_ERROR "Test SHA256 differs")
+		if ( "${RESULT_SHA256}" STREQUAL "${EXPSHA_WIN}" )
+		else()
+			message(FATAL_ERROR "Test SHA256 differs: ${RESULT_SHA256}")
+		endif()
 	endif()
 endfunction(patch_check)
 
-patch_check("${CMD}" "${SRC}" "${PATCH}" "${EXPSHA}")
+patch_check("${CMD}" "${SRC}" "${PATCH}" "${EXPSHA}" "${EXPSHA_WIN}")
 

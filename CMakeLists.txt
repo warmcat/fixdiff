@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.21)
 project(fixdiff C)
 include(CTest)
 
@@ -9,12 +9,16 @@ add_executable(${PROJECT_NAME} ${SRCS})
 
 install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION bin)
 
+# separate sha256 for windows, because both stdout shell redirect
+# and piping stdout onward are in _TEXT
+
 add_test(NAME lws1
 	 COMMAND ${CMAKE_COMMAND}
 	 	-DCMD=$<TARGET_FILE:${PROJECT_NAME}>
 		-DSRC=client-parser-ws.c
 		-DPATCH=gemini.patch
 		-DEXPSHA=fec27b802dc46c2e26f5ccc9316683a780c0785dc46c95f7a9fe73314bb81f5d
+		-DEXPSHA_WIN=2e6b9b12ae0128c9edfc109744b9c67848712b0521c322a45104895aa4cbc3b1
 		-P ${CMAKE_CURRENT_SOURCE_DIR}/tests/runtest.cmake
 	 WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/tests/1)
 

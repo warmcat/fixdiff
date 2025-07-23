@@ -123,6 +123,8 @@ init_lbuf(lbuf_t *plb, const char *name)
 	plb->name = name;
 }
 
+#if 0
+
 static void
 hexdump(void *start, size_t len)
 {
@@ -162,6 +164,8 @@ hexdump(void *start, size_t len)
 		fprintf(stderr, "%04X: %s  %s\n", us, str, asc);
 }
 
+#endif
+
 /*
  * It's strcmp, but it is smart about matching a mixure of line endings
  */
@@ -172,32 +176,36 @@ typedef enum {
 	LE_0D0A
 } line_ending_t;
 
-static int
-fixdiff_strcmp(const char *a, size_t alen, line_ending_t *lea, const char *b, size_t blen, line_ending_t *leb)
+static line_ending_t
+fixdiff_assess_eol(const char *a, size_t alen)
 {
-	*lea = *leb = LE_ZERO;
 	if (alen >= 2 && a[alen - 2] == 0x0d && a[alen - 1] == 0x0a)
-		*lea = LE_0D0A;
-	else
-		if (alen >= 1 && a[alen - 1] == 0x0a)
-			*lea = LE_0A;
+		return LE_0D0A;
 
-	if (blen >= 2 && b[blen - 2] == 0x0d && b[blen - 1] == 0x0a)
-		*leb = LE_0D0A;
-	else
-		if (blen >= 1 && b[blen - 1] == 0x0a)
-			*leb = LE_0A;
+	if (alen >= 1 && a[alen - 1] == 0x0a)
+		return LE_0A;
 
-	// fprintf(stderr, "%d %d (%d %d)\n", *lea, *leb, (int)(alen - *lea), (int)(blen - *leb));
+	return LE_ZERO;
+}
+
+static int
+fixdiff_strcmp(const char *a, size_t alen, line_ending_t *lea, const char *b,
+	       size_t blen, line_ending_t *leb)
+{
+	*lea = fixdiff_assess_eol(a, alen);
+	*leb = fixdiff_assess_eol(b, blen);
 
 	if (alen - *lea != blen - *leb)
+		/* accounting for EOL type, size mismatch */
 		return 1;
 
 	if ((*lea == LE_ZERO && *leb != LE_ZERO) ||
 	    (*lea != LE_ZERO && *leb == LE_ZERO))
-		return 1; /* mismatch */
+		/* one (not both) thought we ended without any CR or CRLF */
+		return 1;
 
 	if (alen - *lea == 0)
+		/* both agree there is only some kind of CR / CRLF */
 		return 0;
 
 	return memcmp(a, b, alen - *lea);
@@ -383,9 +391,6 @@ fixdiff_find_original(dp_t *pdp, int *line_start)
 
 			} while (in_temp[0] == '+');
 
-			// fprintf(stderr, "comp (%d) '%s' (%d) '%s'\n", (int)lt, in_temp, (int)ls, in_src);
-			// hexdump(in_temp, lt);
-			// hexdump(in_src, ls);
 			if (hit)
 				break;
 			if (fixdiff_strcmp(in_temp + 1, lt - 1, &let, in_src, ls, &les))
@@ -423,19 +428,35 @@ fixdiff_find_original(dp_t *pdp, int *line_start)
 			 */
 
 			while (pdp->cx_active < 3) {
+				line_ending_t lea;
+
 				ls = fixdiff_get_line(&lb_ef, in_src + 1, sizeof(in_src) - 1);
 				if (!ls)
 					break;
 
+				lea = fixdiff_assess_eol(in_src + 1, ls);
+
 				in_src[0] = ' ';
 				lseek(lb_temp.fd, 0, SEEK_END);
-				if (write(lb_temp.fd, in_src, TO_POSLEN(strlen(in_src))) !=
-									(ssize_t)strlen(in_src)) {
+				if (write(lb_temp.fd, in_src, TO_POSLEN(ls + 1 - lea)) !=
+					  (ssize_t)(ls + 1 - lea)) {
 					close(lb_ef.fd);
-					pdp->reason = "failed to write extra stanza trailer to temp file";
+					pdp->reason = "failed to write extra stanza"
+							"trailer to temp file";
 					ret = 1;
 					goto out;
 				}
+
+				if (lea != LE_ZERO)
+					if (write(lb_temp.fd, "\n", TO_POSLEN(1)) !=
+						  (ssize_t)1) {
+						close(lb_ef.fd);
+						pdp->reason = "failed to write extra "
+								"stanza trailer to temp file";
+						ret = 1;
+						goto out;
+					}
+
 				pdp->pre++;
 				pdp->post++;
 				pdp->cx_active++;
@@ -443,7 +464,8 @@ fixdiff_find_original(dp_t *pdp, int *line_start)
 			}
 
 			if (a)
-				fprintf(stderr, "Stanza %d: detected patch at EOF: added %d context at end\n",
+				fprintf(stderr, "Stanza %d: detected patch at EOF: "
+						  "added %d context at end\n",
 					pdp->stanzas, a);
 
 			close(lb_ef.fd);
@@ -538,6 +560,16 @@ main(int argc, char *argv[])
 
 	(void)argc;
 	(void)argv;
+
+#if defined(WIN32)
+	SetConsoleOutputCP(65001); /* utf8 */
+	/*
+	 * The problem is cat or type sending to stdin will have opened
+	 * the file it is sending using _O_TEXT, so we have to match
+	 */
+	_setmode(0, _O_TEXT);
+	_setmode(1, _O_BINARY);
+#endif
 
 	/* if there is a commandline arg, we cwd to it first */
 	if (argc > 1)
