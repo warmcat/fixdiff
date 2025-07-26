@@ -1,6 +1,10 @@
 
-function(patch_check CMD SRC PATCH EXPSHA EXPSHA_WIN)
+function(patch_check CMD SRC SRC1 PATCH EXPSHA EXPSHA_WIN)
 	file(COPY_FILE ${SRC}-orig ${SRC})
+
+	if (SRC1)
+		file(COPY_FILE ${SRC1}-orig ${SRC1})
+	endif()
 
 	execute_process(COMMAND cat ${PATCH}
 			COMMAND ${CMD}
@@ -21,5 +25,5 @@ function(patch_check CMD SRC PATCH EXPSHA EXPSHA_WIN)
 	endif()
 endfunction(patch_check)
 
-patch_check("${CMD}" "${SRC}" "${PATCH}" "${EXPSHA}" "${EXPSHA_WIN}")
+patch_check("${CMD}" "${SRC}" "${SRC1}" "${PATCH}" "${EXPSHA}" "${EXPSHA_WIN}")
 

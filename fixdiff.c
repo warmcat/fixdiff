@@ -83,11 +83,6 @@ typedef struct {
 } lbuf_t;
 
 typedef struct {
-	char		osh[128];
-	char		temp[64];
-	char		pf[512];
-
-	lbuf_t		lb;
 	off_t		flo;
 
 	const char	*reason;
@@ -109,6 +104,12 @@ typedef struct {
 	char		skip_this_one;
 	char		lead_in_active;
 	char		cx_active;
+
+	char		osh[128];
+	char		temp[64];
+	char		pf[512];
+
+	lbuf_t		lb;
 } dp_t;
 
 static dp_t dp;
@@ -218,7 +219,7 @@ fixdiff_get_line(lbuf_t *plb, char *buf, size_t len)
 
 	plb->bls = plb->ro + plb->bpos;
 
-	while (len > 1) {
+	while (len > 2) {
 
 		if (plb->bpos == plb->blen) {
 			ssize_t r;
@@ -229,7 +230,6 @@ fixdiff_get_line(lbuf_t *plb, char *buf, size_t len)
 			if (r <= 0) {
 				if (l) {
 					*buf++ = '\n';
-					len--;
 					l++;
 				}
 				break;
@@ -256,12 +256,13 @@ fixdiff_get_line(lbuf_t *plb, char *buf, size_t len)
 }
 
 static int
-_mkstemp(char *tmp, size_t len)
+_mkstemp(const char *base, char *tmp, size_t len)
 {
 	pid_t pi = getpid();
 	int fd;
 
-	snprintf(tmp + strlen(tmp), len - strlen(tmp) - 1, "%d", (int)pi);
+	/* this cannot exceed the size of pdp->temp with given args */
+	(void)snprintf(tmp, len - 1, "%s%lu", base, (unsigned long)pi);
 
 	fd = open(tmp, OFLAGS(O_CREAT | O_TRUNC | O_RDWR), 0600);
 
@@ -287,6 +288,7 @@ fixdiff_stanza_start(dp_t *pdp, char *sh, size_t len)
 		len = sizeof(pdp->osh) - 1;
 
 	memcpy(pdp->osh, sh, len);
+
 	pdp->osh[len] = '\0';
 	pdp->osh[sizeof(pdp->osh) - 1] = '\0';
 
@@ -299,8 +301,7 @@ fixdiff_stanza_start(dp_t *pdp, char *sh, size_t len)
 	 * changed from the original.
 	 */
 
-	strncpy(pdp->temp, ".fixdiff", sizeof(pdp->temp) - 1);
-	pdp->fd_temp = _mkstemp(pdp->temp, sizeof(pdp->temp) - 1);
+	pdp->fd_temp = _mkstemp(".fixdiff", pdp->temp, sizeof(pdp->temp) - 1);
 	if (pdp->fd_temp < 0) {
 		fprintf(stderr, "Unable to create temp file (%d)", errno);
 		return 1;
@@ -393,6 +394,9 @@ fixdiff_find_original(dp_t *pdp, int *line_start)
 
 			if (hit)
 				break;
+
+			fprintf(stderr, "'%s' '%s\n", in_temp + 1, in_src);
+
 			if (fixdiff_strcmp(in_temp + 1, lt - 1, &let, in_src, ls, &les))
 				break;
 		}
@@ -690,6 +694,15 @@ main(int argc, char *argv[])
 				break;
 			} else
 				if (in[0] == '-') { /* Minus */
+
+					if (l > 4 && in[0] == '-' &&
+						     in[1] == '-' &&
+						     in[2] == '-' &&
+						     in[3] == ' ') {
+						dp.d = DSS_MUST_PPP;
+						break;
+					}
+
 					dp.pre++;
 					dp.lead_in_active = 0;
 					dp.cx_active = 0;

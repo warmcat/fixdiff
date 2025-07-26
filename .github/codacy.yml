@@ -1,0 +1,7 @@
+query-filters:
+  - exclude:
+      id: flawfinder_strlen
+  - exclude:
+      id: flawfinder_open
+  - exclude:
+      id: cppcheck_misra-c2012-12.1

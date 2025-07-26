@@ -1,0 +1,83 @@
+--- a/protocol_lws_deaddrop.c
++++ b/protocol_lws_deaddrop.c
+@@ -470,26 +470,23 @@
+ 		if (strncmp((const char *)in, "{\"del\":\"", 8))
+ 			break;
+ 
+-		/*
+-		 * NOTE: any authenticated user can delete any file.
+-		 * To restrict to owner, uncomment the following check.
+-		 */
+-		// cp = strchr((const char *)in, '/');
+-		// if (cp) {
+-		// 	n = (int)(((uint8_t *)cp - (uint8_t *)in)) - 8;
+-		// 
+-		// 	if ((int)strlen(pss->user) != n ||
+-		// 	    memcmp(pss->user, ((const char *)in) + 8, (unsigned int)n)) {
+-		// 		lwsl_notice("%s: del: auth mismatch "
+-		// 			    " '%s' '%s' (%d)\n",
+-		// 			    __func__, pss->user,
+-		// 			    ((const char *)in) + 8, n);
+-		// 		break;
+-		// 	}
+-		// }
++		/* Authorization: check the owner name in the path matches the
++		 * authenticated user session name. */
++		cp = strchr((const char *)in, '/');
++		if (!cp) {
++			lwsl_warn("%s: malformed delete from %s\n", __func__, pss->user);
++			break;
++		}
++
++		n = (int)(((uint8_t *)cp - (uint8_t *)in)) - 8;
++		if ((int)strlen(pss->user) != n ||
++		    strncmp(pss->user, ((const char *)in) + 8, (unsigned int)n)) {
++			lwsl_notice("%s: del: auth mismatch on %s for user %s\n",
++				    __func__, (const char *)in + 8, pss->user);
++			break;
++		}
+ 
+ 		lws_strncpy(fname, ((const char *)in) + 8, sizeof(fname));
+ 		wp = strchr((const char *)fname, '\"');
+ 		if (wp)
+--- a/deaddrop.js
++++ b/deaddrop.js
+@@ -10,6 +10,15 @@
++	}
++
++	function clean_name(s) {
++		var n = s.indexOf('/');
++
++		if (n < 0)
++			return s;
++
++		return s.substring(n + 1);
+ 	}
+ 
+ 	function pad(n) {
+@@ -262,21 +271,21 @@
+ 					humanize(j.files[n].size) +
+ 					"</td><td class=\"dow\">" +
+ 					date.toDateString() + " " +
+-					date.toLocaleTimeString() + "</td><td>";
+-
+-					if (username) /* any authenticated user can delete */
++					date.toLocaleTimeString() + "</td><td>"
++
++					if (j.files[n].yours === 1)
+ 						s += "<img id=\"d" + n +
+ 					  "\" class=\"delbtn\" file=\"" +
+-						san(j.files[n].name) + "\">";
++						lws_urlencode(san(j.files[n].name)) + "\">";
+ 					else
+ 						s += " ";
+ 
+ 					s += "</td><td class=\"ogn\"><a href=\"get/" +
+ 					lws_urlencode(san(j.files[n].name)) +
+ 					  "\" download>" +
+-					san(j.files[n].name) + "</a></td></tr>";
++					san(clean_name(j.files[n].name)) + "</a></td></tr>";
+ 				}
+ 				s += "</table>";
+ 
+ 				t.innerHTML = s;
