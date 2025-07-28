@@ -29,8 +29,9 @@ legible diffs.
 This utility adjusts the diff stanzas sent to it on stdin and produces new stanza
 headers with accurate line counts on stdout.
 
-It covers:
+It silently repairs:
 
+ - added empty lines with only whitespace become blank lines
  - wrong "before" line in original stanza header
  - wrong "before" line count in original stanza header
  - wrong "after" line in original stanza header
@@ -44,7 +45,13 @@ It finds and scans the sources the patches apply to and uses the diff stanza to
 find the original line it applied to by itself, along with the original line
 count and, considering earlier stanzas, the line in the modified file it appears
 at and the new line count for the stanza.  Thus, it does not use the incoming
-broken stanza header information at all and replaces all the @@ lines.
+broken stanza header information at all and replaces all the @@ lines with
+correct numbers according to the changed and unchanged sources, and the actual
+diff contents inside the stanza.
+
+It handles diffs starting with --- as produced by most LLMs, also those with
+diff and index headers, and supports any combination of concatenated diffs
+targeting different files in one step.
 
 ## Building
 
@@ -63,4 +70,6 @@ $ cd build
 $ cmake ..
 $ make && sudo make install
 ```
+
+Selftests can be run after build with `ctest --output-on-failure`.
 

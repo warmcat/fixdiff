@@ -1,3 +1,5 @@
+diff --git a/protocol_lws_deaddrop.c b/protocol_lws_deaddrop.c
+index 8f804f0..7913254 100644
 --- a/protocol_lws_deaddrop.c
 +++ b/protocol_lws_deaddrop.c
 @@ -140,78 +140,68 @@
@@ -237,6 +239,8 @@
  
  		lws_strncpy(fname, ((const char *)in) + 8, sizeof(fname));
  		wp = strchr((const char *)fname, '\"');
+diff --git a/deaddrop.js b/deaddrop.js
+index 8f804f0..7913254 100644
 --- a/deaddrop.js
 +++ b/deaddrop.js
 @@ -165,13 +165,21 @@
@@ -304,3 +308,4 @@
  
  				t.innerHTML = s;
  
+

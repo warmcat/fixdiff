@@ -59,6 +59,8 @@ typedef unsigned long pid_t;
 
 #include <sys/types.h>
 
+#define elog(...) fprintf(stderr, __VA_ARGS__ )
+
 typedef enum {
 	DSS_WAIT_MMM,
 	DSS_MUST_PPP,
@@ -142,7 +144,7 @@ hexdump(void *start, size_t len)
 	while (len) {
 		len--;
 		if (a == 16) {
-			fprintf(stderr, "%04X: %s  %s\n", us, str, asc);
+			elog("%04X: %s  %s\n", us, str, asc);
 			memset(str, ' ', 48);
 			memset(asc, ' ', 16);
 			a = 0;
@@ -162,7 +164,7 @@ hexdump(void *start, size_t len)
 		used++;
 	}
 	if (a)
-		fprintf(stderr, "%04X: %s  %s\n", us, str, asc);
+		elog("%04X: %s  %s\n", us, str, asc);
 }
 
 #endif
@@ -303,7 +305,7 @@ fixdiff_stanza_start(dp_t *pdp, char *sh, size_t len)
 
 	pdp->fd_temp = _mkstemp(".fixdiff", pdp->temp, sizeof(pdp->temp) - 1);
 	if (pdp->fd_temp < 0) {
-		fprintf(stderr, "Unable to create temp file (%d)", errno);
+		elog("Unable to create temp file (%d)", errno);
 		return 1;
 	}
 	pdp->skip_this_one = 1;
@@ -314,10 +316,10 @@ fixdiff_stanza_start(dp_t *pdp, char *sh, size_t len)
 static int
 fixdiff_find_original(dp_t *pdp, int *line_start)
 {
+	int ret = 1, mc = 0, lmc = 0, lis = 0, lg_lis = 0;
 	char in_src[4096], in_temp[4096], hit = 0;
 	lbuf_t lb_temp, lb_src, lb;
 	size_t lt, ls;
-	int ret = 1;
 
 	/*
 	 * We need to confirm the correct place in the file with the unchanged
@@ -338,10 +340,10 @@ fixdiff_find_original(dp_t *pdp, int *line_start)
 	while (pdp->lead_in > 3) {
 		lt = fixdiff_get_line(&lb_temp, in_temp, sizeof(in_temp));
 		if (!lt) {
-			fprintf(stderr, "Unable to skip temp lines\n");
+			elog("Unable to skip temp lines\n");
 			return 1;
 		}
-		fprintf(stderr, "Stanza %d: removing extra lead-in\n", pdp->stanzas);
+		elog("Stanza %d: removing extra lead-in\n", pdp->stanzas);
 		pdp->lead_in--;
 		pdp->lead_in_corrected++;
 		pdp->pre--;
@@ -354,7 +356,7 @@ fixdiff_find_original(dp_t *pdp, int *line_start)
 	init_lbuf(&lb_src, "src");
 	lb_src.fd = open(pdp->pf, OFLAGS(O_RDONLY));
 	if (lb_src.fd < 0) {
-		fprintf(stderr, "%s: Unable to open: %s: %d\n",
+		elog("%s: Unable to open: %s: %d\n",
 			__func__, pdp->pf, errno);
 		close(lb_temp.fd);
 		return 1;
@@ -371,6 +373,7 @@ fixdiff_find_original(dp_t *pdp, int *line_start)
 		init_lbuf(&lb, "src_comp");
 		lb.fd = open(pdp->pf, OFLAGS(O_RDONLY));
 		lb.li = lb_src.li;
+		lis = lb.li;
 		lseek(lb.fd, (off_t)(lb_src.ro + lb_src.bpos), SEEK_SET);
 
 		init_lbuf(&lb_temp, "lb_temp");
@@ -379,7 +382,8 @@ fixdiff_find_original(dp_t *pdp, int *line_start)
 		while (!hit) {
 			ls = fixdiff_get_line(&lb, in_src, sizeof(in_src));
 			if (!ls) {
-				fprintf(stderr, "failed on src exhaustion\n");
+				elog("failed to match, best chunk %d lines at %s:%d\n", lmc, pdp->pf, lg_lis);
+				mc = 0;
 				break;
 			}
 
@@ -395,10 +399,18 @@ fixdiff_find_original(dp_t *pdp, int *line_start)
 			if (hit)
 				break;
 
-			fprintf(stderr, "'%s' '%s\n", in_temp + 1, in_src);
-
-			if (fixdiff_strcmp(in_temp + 1, lt - 1, &let, in_src, ls, &les))
+			if (fixdiff_strcmp(in_temp + 1, lt - 1, &let, in_src, ls, &les)) {
+				if (mc > pdp->pre + pdp->post)
+					elog("match failed after %d: '%s' / '%s'", mc, in_temp + 1, in_src);
+				mc = 0;
 				break;
+			}
+
+			mc++;
+			if (mc > lmc) {
+				lmc++;
+				lg_lis = lis;
+			}
 		}
 
 		close(lb.fd);
@@ -468,7 +480,7 @@ fixdiff_find_original(dp_t *pdp, int *line_start)
 			}
 
 			if (a)
-				fprintf(stderr, "Stanza %d: detected patch at EOF: "
+				elog("Stanza %d: detected patch at EOF: "
 						  "added %d context at end\n",
 					pdp->stanzas, a);
 
@@ -493,7 +505,7 @@ fixdiff_stanza_end(dp_t *pdp)
 		return 0;
 
 	if (fixdiff_find_original(pdp, &orig)) {
-		fprintf(stderr, "Unable to find original stanza in source\n");
+		elog("Unable to find original stanza in source\n");
 		goto probs;
 	}
 
@@ -517,7 +529,7 @@ fixdiff_stanza_end(dp_t *pdp)
 	/* is that what we already had? */
 
 	if (strcmp(buf, pdp->osh)) {
-		fprintf(stderr, "  - (lead_in %d, lead_out %d) %s", pdp->lead_in, pdp->lead_out, buf);
+		elog("  - (lead_in %d, lead_out %d) %s", pdp->lead_in, pdp->lead_out, buf);
 		pdp->bad++;
 	}
 
@@ -633,7 +645,7 @@ main(int argc, char *argv[])
 				if (p)
 					*p = '\0';
 
-				fprintf(stderr, "Filepath: %s\n", dp.pf);
+				elog("Filepath: %s\n", dp.pf);
 
 				dp.d = DSS_MUST_AA;
 				break;
@@ -700,6 +712,8 @@ main(int argc, char *argv[])
 						     in[2] == '-' &&
 						     in[3] == ' ') {
 						dp.d = DSS_MUST_PPP;
+						if (fixdiff_stanza_end(&dp))
+							goto bail;
 						break;
 					}
 
@@ -709,6 +723,42 @@ main(int argc, char *argv[])
 					break;
 				} else
 					if (in[0] == '+') { /* Plus */
+
+						size_t l1 = 1;
+
+						/*
+						 * Since we're adding the line, let's look closely
+						 * to see if it's only whitespace, in which case we
+						 * can collapse it to just be the EOL pieces if any
+						 */
+
+						while (l1 < l) {
+							if (in[l1] != 0x20 && in[l1] != 0x09)
+								break;
+							l1++;
+						}
+
+						if (l1 == l) { /* line was only whitespace with no EOL */
+							dp.skip_this_one =1;
+							break;
+						}
+
+						if (l1 > 1 && in[l1] == 0x0d && (l - l1) == 2 && in[l1 + 1] == 0x0a) {
+							in[1] = in[l1];
+							in[2] = in[l1 + 1];
+							in[3] = '\0';
+							l = 3;
+							elog("  Reducing %u char whitespace-only line to CRLF\n",
+							     (unsigned int)l1);
+						} else
+							if (l1 > 1 && in[l1] == 0x0a && (l - l1) == 1) {
+								in[1] = in[l1];
+								in[2] = '\0';
+								l = 2;
+								elog("  Reducing %d char whitespace-only line to LF\n",
+									(unsigned int)l1);
+							}
+
 						dp.post++;
 						dp.lead_in_active = 0;
 						dp.cx_active = 0;
@@ -737,7 +787,14 @@ main(int argc, char *argv[])
 					goto bail;
 				break;
 			}
-			fprintf(stderr, "'%c' (0x%x)\n", in[0], in[0]);
+
+			if (in[0] == 0xa) {
+				/* we can often find this from extra lines at EOT */
+				elog("  Skipping unexpected newline\n");
+				continue;
+			}
+
+			elog("'%c' (0x%x)\n", in[0], in[0]);
 			dp.reason = "unexpected character in stanza";
 			goto bail;
 		}
@@ -749,12 +806,12 @@ main(int argc, char *argv[])
 
 		w = write(dp.fd_temp != -1 ? dp.fd_temp : 1, in, TO_POSLEN(l));
 		if (w < 0) {
-			fprintf(stderr, "write to stdout failed: %d\n", errno);
+			elog("write to stdout failed: %d\n", errno);
 			goto bail;
 		}
 	}
 
-	fprintf(stderr, "Completed: %d / %d stanza headers repaired\n",
+	elog("Completed: %d / %d stanza headers repaired\n",
 		dp.bad, dp.stanzas);
 
 	unlink(dp.temp);
@@ -762,7 +819,7 @@ main(int argc, char *argv[])
 	return 0;
 
 bail:
-	fprintf(stderr, "line %d: fatal exit: %s: %s\n", dp.lb.li, dp.reason, in);
+	elog("line %d: fatal exit: %s: %s\n", dp.lb.li, dp.reason, in);
 
 	unlink(dp.temp);
 
