@@ -8,6 +8,7 @@ set(COMPILE_WARNING_AS_ERROR 1)
 add_executable(${PROJECT_NAME} ${SRCS})
 
 install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION bin)
+install(PROGRAMS tools/concat.sh DESTINATION bin)
 
 # separate sha256 for windows, because both stdout shell redirect
 # and piping stdout onward are in _TEXT
