@@ -316,8 +316,8 @@ fixdiff_stanza_start(dp_t *pdp, char *sh, size_t len)
 static int
 fixdiff_find_original(dp_t *pdp, int *line_start)
 {
+	char in_src[4096], in_temp[4096], b1[256], b2[256], hit = 0;
 	int ret = 1, mc = 0, lmc = 0, lis = 0, lg_lis = 0;
-	char in_src[4096], in_temp[4096], hit = 0;
 	lbuf_t lb_temp, lb_src, lb;
 	size_t lt, ls;
 
@@ -327,6 +327,8 @@ fixdiff_find_original(dp_t *pdp, int *line_start)
 	 */
 
 	lb_src.fd = lb.fd = -1;
+	b1[0] = '\0';
+	b2[0] = '\0';
 
 	init_lbuf(&lb_temp, "temp");
 	lb_temp.fd = open(pdp->temp, OFLAGS(O_RDWR));
@@ -402,6 +404,7 @@ fixdiff_find_original(dp_t *pdp, int *line_start)
 			if (!ls) {
 				elog("failed to match, best chunk %d lines at %s:%d\n",
 				     lmc, pdp->pf, lg_lis);
+				elog("patch: '%s', source '%s'\n", b1, b2);
 				mc = 0;
 				break;
 			}
@@ -415,6 +418,10 @@ fixdiff_find_original(dp_t *pdp, int *line_start)
 
 			mc++;
 			if (mc > lmc) {
+				strncpy(b1, in_temp + 1, sizeof(b1) - 1);
+				b1[sizeof(b1) - 1] = '\0';
+				strncpy(b2, in_src + 1, sizeof(b2) - 1);
+				b2[sizeof(b2) - 1] = '\0';
 				lmc++;
 				lg_lis = lis;
 			}
