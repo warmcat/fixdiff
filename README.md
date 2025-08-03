@@ -1,7 +1,7 @@
 # fixdiff
 
-Andy Green <andy@warmcat.com> 2025
-See MIT license in LICENSE
+Copyright (C) 2025 Andy Green <andy@warmcat.com>
+Licensed under MIT license, see LICENSE
 
 ```
 $ cat llm-patch.diff | fixdiff | patch -p1
@@ -24,22 +24,25 @@ $ cat llm-patch.diff | fixdiff /path/to/sources | patch -p1
 
 LLM find it hard to generate diff headers with correct line counts or even
 line offsets, although some LLMs are smart enough to produce otherwise
-legible diffs.
+legible diffs.  Often the content or just the context lines around the
+changes are not quite right.
 
 This utility adjusts the diff stanzas sent to it on stdin and produces new stanza
 headers with accurate line counts on stdout.
 
 It silently repairs:
 
- - added empty lines with only whitespace become blank lines
- - wrong "before" line in original stanza header
- - wrong "before" line count in original stanza header
- - wrong "after" line in original stanza header
- - wrong "after" line count in original stanza header
- - removes extra lead-in context lines in stanza
- - for diffs adding to end of file, corrects mismatching context caused by
-   LLM losing blank lines at the original EOF (by checking the original
-   source file for extra lines and adding them to the stanza as context)
+ 1. new empty lines with only whitespace, by rewriting to blank lines
+ 2. original lines in diff that differ from real line in file only by
+    whitespace are rewritten to contain the correct whitespace
+ 3. wrong "before" line in original stanza header
+ 4. wrong "before" line count in original stanza header
+ 5. wrong "after" line in original stanza header
+ 6. wrong "after" line count in original stanza header
+ 7. extra lead-in context lines to stanza by removing until only 3
+ 8. diffs adding to end of file with missing or wrong context caused by
+    LLM losing blank lines at the original EOF are rewritten by checking
+    the original source file for extra lines and adding them to the stanza as context)
 
 It finds and scans the sources the patches apply to and uses the diff stanza to
 find the original line it applied to by itself, along with the original line

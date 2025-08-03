@@ -84,10 +84,20 @@ typedef struct {
 	int		li;
 } lbuf_t;
 
+typedef struct rewriter {
+	struct rewriter		*next;
+	size_t			len;
+	int			line;
+	char			*text;
+} rewriter_t;
+/* new_text is overcommitted below */
+
 typedef struct {
 	off_t		flo;
 
 	const char	*reason;
+
+	rewriter_t	*rewriter_head;
 
 	dss_t		d;
 	int		pre;
@@ -101,6 +111,8 @@ typedef struct {
 	int		bad;
 
 	int		fd_temp;
+
+	int		li_out;
 
 	char		ongoing;
 	char		skip_this_one;
@@ -313,10 +325,26 @@ fixdiff_stanza_start(dp_t *pdp, char *sh, size_t len)
 	return 0;
 }
 
+static void
+stain_copy(char *dest, const char *in, size_t len)
+{
+	char *p = dest;
+
+	strncpy(dest, in, len - 1);
+	dest[len - 1] = '\0';
+	do {
+		p = strchr(p, '\t');
+		if (!p)
+			break;
+		*p = '>';
+		p++;
+	} while (1);
+}
+
 static int
 fixdiff_find_original(dp_t *pdp, int *line_start)
 {
-	char in_src[4096], in_temp[4096], b1[256], b2[256], hit = 0;
+	char in_src[4096], in_temp[4096], b1[256], b2[256], f1[256], f2[256], hit = 0;
 	int ret = 1, mc = 0, lmc = 0, lis = 0, lg_lis = 0;
 	lbuf_t lb_temp, lb_src, lb;
 	size_t lt, ls;
@@ -329,6 +357,8 @@ fixdiff_find_original(dp_t *pdp, int *line_start)
 	lb_src.fd = lb.fd = -1;
 	b1[0] = '\0';
 	b2[0] = '\0';
+	f1[0] = '\0';
+	f2[0] = '\0';
 
 	init_lbuf(&lb_temp, "temp");
 	lb_temp.fd = open(pdp->temp, OFLAGS(O_RDWR));
@@ -402,26 +432,105 @@ fixdiff_find_original(dp_t *pdp, int *line_start)
 				break;
 
 			if (!ls) {
-				elog("failed to match, best chunk %d lines at %s:%d\n",
+				elog("failed to match, best chunk %d lines at %s:%d (tabs shown below as >)\n",
 				     lmc, pdp->pf, lg_lis);
-				elog("patch: '%s', source '%s'\n", b1, b2);
+				elog("last match: patch = '%s"
+				     "',         source = '%s'\n", b1, b2);
+				elog("divergence: patch = '%s"
+				     "',         source = '%s'\n", f1, f2);
 				mc = 0;
 				break;
 			}
 
 			if (fixdiff_strcmp(in_temp + 1, lt - 1, &let, in_src, ls, &les)) {
-				if (mc > pdp->pre + pdp->post)
-					elog("match failed after %d: '%s' / '%s'", mc, in_temp + 1, in_src);
+				/*
+				 * It's not a match.
+				 *
+				 * It's still possible we only differ by whitespace.
+				 * Does it match if we treat any whitespace as a single
+				 * whitespace match token?
+				 */
+
+				char *p1 = in_temp + 1, *p1_end = p1 + lt - 1 - (int)let,
+				     *p2 = in_src,      *p2_end = p2 + ls     - (int)les;
+
+				while (p1 < p1_end && p2 < p2_end) {
+					char wst1 = 0, wst2 = 0;
+
+					while (*p1 == ' ' || *p1 == '\t' && p1 < p1_end) {
+						p1++;
+						wst1 = 1;
+					}
+					while (*p2 == ' ' || *p2 == '\t' && p2 < p2_end) {
+						p2++;
+						wst2 = 1;
+					}
+
+					if (wst1 != wst2)
+						goto record_breakage;
+
+					if (*p1 != *p2)
+						goto record_breakage;
+
+					p1++;
+					p2++;
+				}
+
+				if ((p1 < p1_end) != (p2 < p2_end))
+					goto record_breakage;
+
+				elog("(fixable whitespace-only difference at stanza line %d)\n", lb_temp.li);
+
+				/*
+				 * We have to take care about picking up windows _TEXT
+				 * CRLF, eliminating that if present and only putting
+				 * the LF, so rewritten lines are indistinguishable
+				 */
+
+				{
+					size_t rlen = 1 /* the diff char */ + ls - les /* CRLF len */ + 1;
+					rewriter_t *rwt = malloc(sizeof(*rwt) + rlen + 1);
+
+					if (!rwt) {
+						elog("OOM\n");
+						return -1;
+					}
+					rwt->next = pdp->rewriter_head;
+					pdp->rewriter_head = rwt;
+					rwt->line = lb_temp.li;
+					rwt->text = (char *)&rwt[1];
+					rwt->text[0] = *in_temp;
+					rwt->len = rlen;
+					memcpy(rwt->text + 1, in_src, ls);
+					rwt->text[rlen - 1] = '\n';
+				}
+				goto allow_match_ws;
+
+record_breakage:
+				if (mc + 1 > lmc) {
+					stain_copy(f1, in_temp + 1, sizeof(f1));
+					stain_copy(f2, in_src, sizeof(f2));
+				}
 				mc = 0;
+				{
+					rewriter_t *rwt = pdp->rewriter_head, *rwt1;
+
+					while (rwt) {
+						rwt1 = rwt->next;
+						free(rwt);
+						rwt = rwt1;
+					}
+
+					pdp->rewriter_head = NULL;
+				}
 				break;
 			}
 
+allow_match_ws:
 			mc++;
 			if (mc > lmc) {
-				strncpy(b1, in_temp + 1, sizeof(b1) - 1);
-				b1[sizeof(b1) - 1] = '\0';
-				strncpy(b2, in_src + 1, sizeof(b2) - 1);
-				b2[sizeof(b2) - 1] = '\0';
+				stain_copy(b1, in_temp + 1, sizeof(b1));
+				stain_copy(b2, in_src, sizeof(b2));
 				lmc++;
 				lg_lis = lis;
 			}
@@ -512,8 +621,9 @@ out:
 static int
 fixdiff_stanza_end(dp_t *pdp)
 {
+	int orig, nope = 0;
+	lbuf_t lb_temp;
 	char buf[256];
-	int orig;
 
 	if (!pdp->ongoing)
 		return 0;
@@ -554,20 +664,63 @@ fixdiff_stanza_end(dp_t *pdp)
 
 	/* dump the temp side-buffer into stdout */
 
-	lseek(pdp->fd_temp, pdp->flo, SEEK_SET);
+	init_lbuf(&lb_temp, "lb_temp");
+	lb_temp.fd = open(pdp->temp, OFLAGS(O_RDONLY));
+	lseek(lb_temp.fd, pdp->flo, SEEK_SET);
+
 	while (1) {
-		ssize_t l = read(pdp->fd_temp, buf, sizeof(buf));
+		char buf[4096];
+		ssize_t l = fixdiff_get_line(&lb_temp, buf, sizeof(buf));
+		rewriter_t *rwt = pdp->rewriter_head;
+
 		if (!l)
 			break;
 
-		if (write(1, buf, TO_POSLEN(l)) != (ssize_t)l) {
-			pdp->reason = "failed to write to stdout";
-			return 1;
+		// elog("dumping %d (len %d)\n", (int)pdp->li_out, (int)l);
+
+		while (rwt) {
+			// elog("%d %d\n", rwt->line, pdp->li_out);
+			if (rwt->line == lb_temp.li /*pdp->li_out*/) /* we need to rewrite this line */
+				break;
+
+			rwt = rwt->next;
 		}
+
+		if (rwt) {
+			// elog("rewriting '%.*s' to '%.*s'\n", (int)l, buf, (int)rwt->len, rwt->text);
+			if (write(1, rwt->text, TO_POSLEN(rwt->len)) != (ssize_t)rwt->len) {
+				pdp->reason = "failed to write to stdout";
+				nope = 1;
+				break;
+			}
+		} else {
+			if (write(1, buf, TO_POSLEN(l)) != (ssize_t)l) {
+				pdp->reason = "failed to write to stdout";
+				nope = 1;
+				break;
+			}
+		}
+
+		pdp->li_out++;
 	}
 
-	close(pdp->fd_temp);
+	{
+		rewriter_t *rwt = pdp->rewriter_head, *rwt1;
+
+		while (rwt) {
+			rwt1 = rwt->next;
+			free(rwt);
+			rwt = rwt1;
+		}
+
+		pdp->rewriter_head = NULL;
+	}
+
+	close(lb_temp.fd);
 	pdp->fd_temp = -1;
+
+	if (nope)
+		return 1;
 
 	/* track the effect stanza changes are having on line offsets */
 	pdp->delta += pdp->post - pdp->pre;
@@ -611,6 +764,7 @@ main(int argc, char *argv[])
 	dp.d = DSS_WAIT_MMM;
 	dp.lb.fd = 0; /* stdin */
 	dp.fd_temp = -1;
+	dp.li_out = 1;
 
 	while (1) {
 		size_t l = fixdiff_get_line(&dp.lb, in, sizeof(in));
