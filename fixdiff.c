@@ -381,11 +381,11 @@ fixdiff_find_original(dp_t *pdp, int *line_start)
 
 		while (!hit) {
 			ls = fixdiff_get_line(&lb, in_src, sizeof(in_src));
-			if (!ls) {
-				elog("failed to match, best chunk %d lines at %s:%d\n", lmc, pdp->pf, lg_lis);
-				mc = 0;
-				break;
-			}
+				/*
+				 * We may be adding at end with original lines leading-in, in this
+				 * case it is normal we will not be able to fetch any more lines
+				 * from the original file before running out of diff
+				 */
 
 			do {
 				lt = fixdiff_get_line(&lb_temp, in_temp, sizeof(in_temp));
@@ -398,6 +398,13 @@ fixdiff_find_original(dp_t *pdp, int *line_start)
 
 			if (hit)
 				break;
+
+			if (!ls) {
+				elog("failed to match, best chunk %d lines at %s:%d\n",
+				     lmc, pdp->pf, lg_lis);
+				mc = 0;
+				break;
+			}
 
 			if (fixdiff_strcmp(in_temp + 1, lt - 1, &let, in_src, ls, &les)) {
 				if (mc > pdp->pre + pdp->post)

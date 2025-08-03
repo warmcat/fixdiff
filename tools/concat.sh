@@ -27,7 +27,11 @@ if [ $? -ne 0 ] ; then
 	exit 0
 fi
 cat .concat.tmp | xsel
-
+if [ $? -ne 0 ] ; then
+	echo "xsel not available, dumping to stdout =============================================="
+	cat .concat.tmp
+	exit 0
+fi
 echo "Concatenated file contents in clipboard"
 
 exit 0
