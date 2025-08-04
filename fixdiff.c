@@ -116,6 +116,9 @@ typedef struct {
 
 	int		pending_empty_lines;
 
+	int		whitespace_corrected[64];
+	int		count_whitespace_corrected;
+
 	char		ongoing;
 	char		skip_this_one;
 	char		lead_in_active;
@@ -380,7 +383,7 @@ fixdiff_find_original(dp_t *pdp, int *line_start)
 			elog("Unable to skip temp lines\n");
 			return 1;
 		}
-		elog("Stanza %d: removing extra lead-in\n", pdp->stanzas);
+		elog("    stanza %d: removing extra lead-in\n", pdp->stanzas);
 		pdp->lead_in--;
 		pdp->lead_in_corrected++;
 		pdp->pre--;
@@ -399,6 +402,8 @@ fixdiff_find_original(dp_t *pdp, int *line_start)
 		return 1;
 	}
 
+	pdp->count_whitespace_corrected = 0;
+
 	/*
 	 * Outer loop walks through each line in source.
 	 * Inner loop tries to match starting from that line
@@ -406,6 +411,7 @@ fixdiff_find_original(dp_t *pdp, int *line_start)
 
 	while (!hit) {
 		line_ending_t let, les;
+		int n;
 
 		init_lbuf(&lb, "src_comp");
 		lb.fd = open(pdp->pf, OFLAGS(O_RDONLY));
@@ -437,7 +443,8 @@ fixdiff_find_original(dp_t *pdp, int *line_start)
 				break;
 
 			if (!ls) {
-				elog("Failed to match, best chunk %d lines started at %s:%d (tabs shown below as >)\n",
+				elog("**** Failed to match, best chunk %d lines started at %s:%d "
+				     "(tabs shown below as >)\n",
 				     lmc, pdp->pf, lg_lis);
 				elog("last match: patch = '%s"
 				     "',         source = '%s'\n", b1, b2);
@@ -484,7 +491,12 @@ fixdiff_find_original(dp_t *pdp, int *line_start)
 				if ((p1 < p1_end) != (p2 < p2_end))
 					goto record_breakage;
 
-				elog("(fixable whitespace-only difference at stanza line %d)\n", lb_temp.li);
+				for (n = 0; n < pdp->count_whitespace_corrected; n++)
+					if (pdp->whitespace_corrected[n] == lb_temp.li)
+						break;
+				if (n == pdp->count_whitespace_corrected &&
+				    pdp->count_whitespace_corrected < sizeof(pdp->whitespace_corrected) / sizeof(int))
+					pdp->whitespace_corrected[pdp->count_whitespace_corrected++] = lb_temp.li;
 
 				/*
 				 * We have to take care about picking up windows _TEXT
@@ -592,8 +604,7 @@ allow_match_ws:
 				}
 
 				if (lea != LE_ZERO)
-					if (write(lb_temp.fd, "\n", TO_POSLEN(1)) !=
-						  (ssize_t)1) {
+					if (write(lb_temp.fd, "\n", TO_POSLEN(1)) != (ssize_t)1) {
 						close(lb_ef.fd);
 						pdp->reason = "failed to write extra "
 								"stanza trailer to temp file";
@@ -608,12 +619,16 @@ allow_match_ws:
 			}
 
 			if (a)
-				elog("Stanza %d: detected patch at EOF: "
+				elog("    stanza %d: detected patch at EOF: "
 						  "added %d context at end\n",
 					pdp->stanzas, a);
 
 			close(lb_ef.fd);
 		}
+
+		if (pdp->count_whitespace_corrected)
+			elog("    stanza %d: fixed %d lines with whitespace-only fuzz\n",
+			     pdp->stanzas, pdp->count_whitespace_corrected);
 	}
 
 out:
@@ -642,7 +657,7 @@ fixdiff_stanza_end(dp_t *pdp)
 	}
 
 	if (dp.pending_empty_lines)
-		elog("  Dropped %d unexpected empty lines\n", dp.pending_empty_lines);
+		elog("    stanza %d: Dropped %d unexpected empty lines\n", pdp->stanzas, dp.pending_empty_lines);
 
 	if (fixdiff_find_original(pdp, &orig)) {
 		elog("Unable to find original stanza in source\n");
@@ -885,7 +900,8 @@ main(int argc, char *argv[])
 			    (in[0] == ' ' || in[0] == '-' || in[0] == '+')) {
 				char ctx[3];
 
-				elog("  Treating %d unexpected newline(s) as context\n", dp.pending_empty_lines);
+				elog("    stanza %d: Treating %d unexpected newline(s) as context\n",
+					dp.stanzas, dp.pending_empty_lines);
 
 				ctx[0] = ' ';
 				ctx[1] = '\n';
@@ -959,15 +975,15 @@ main(int argc, char *argv[])
 							in[2] = in[l1 + 1];
 							in[3] = '\0';
 							l = 3;
-							elog("  Reducing %u char whitespace-only line to CRLF\n",
-							     (unsigned int)l1);
+							elog("    stanza %d: Reducing %u char whitespace-only "
+								"line to CRLF\n", dp.stanzas, (unsigned int)l1);
 						} else
 							if (l1 > 1 && in[l1] == 0x0a && (l - l1) == 1) {
 								in[1] = in[l1];
 								in[2] = '\0';
 								l = 2;
-								elog("  Reducing %d char whitespace-only line to LF\n",
-									(unsigned int)l1);
+								elog("    stanza %d: Reducing %d char whitespace-only"
+									" line to LF\n", dp.stanzas, (unsigned int)l1);
 							}
 
 						dp.post++;

@@ -33,17 +33,194 @@ headers with accurate line counts on stdout.
 It silently repairs:
 
  1. New empty + lines with only whitespace are rewritten to be empty blank lines
+
+Example:
+  
+```
+diff --git a/deaddrop.js b/deaddrop.js
+index 8f804f0..7913254 100644
+--- a/deaddrop.js
++++ b/deaddrop.js
+@@ -165,13 +165,21 @@
+                    ts = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' +
+                         pad(d.getDate()) + '_' + pad(d.getHours()) + '-' +
+                         pad(d.getMinutes()) + '-' + pad(d.getSeconds()),
++<tab>
+                    formData = new FormData(), blob;
+...
+```
+
+The added line is rewritten to be an empty blank line.
+
  2. Diff stanzas that do not contain any +/- lines are removed
+ 
+Example:
+ 
+```
+--- a/deaddrop.js
++++ b/deaddrop.js
+@@ -3,6 +3,11 @@
+        var server_max_size = 0, username = "", ws;
+
+        function san(s)
+        {
+```
+
  3. Original lines in diff that differ from real line in file only by
     whitespace are rewritten to contain the correct whitespace
+
+Example: file contains `<tab><tab>abc`
+
+```
+--- a/deaddrop.js
++++ b/deaddrop.js
+@@ -3,6 +3,11 @@
+ <space><space>abc
+...
+```
+
+The output patch is rewritten to match what is already in the file at that
+line for whitespace, so the output patch contains `<tab><tab>abc`
+
  4. All stanza header line offsets and counts are recomputed from the actual
     match in the original source and counting before and after lines in the diff,
     the incoming @@ line is completely ignored and rewritten with actual info
+
+Example incoming patch stanza headers can be nonsense
+
+```
+--- a/deaddrop.js
++++ b/deaddrop.js
+@@ -123,16 +345,5 @@
+ <space><space>abc
+...
+```
+
+The correct headers will be rewritten in place of the wrong ones.
+
  5. Extra lead-in context lines to stanza by removing until only 3
+ 
+```
+--- a/deaddrop.js
++++ b/deaddrop.js
+@@ -3,6 +3,11 @@
+                                                "<tr><th>User</th><th>IP Address</th>" +
+                                                "<th>Platform</th><th>Client</th></tr>";
+
+                                        for (n = 0; n < j.connected_users.length; n++) {
+                                                var u = j.connected_users[n];
+                                                s_users += "<tr><td>" + san(u.user) +
+                                                        "</td><td>" + san(u.ip) +
+                                                        "</td><td>" + san(u.platform) +
+                                                        "</td><td>" + san(u.browser) +
+                                                        "</td></tr>";
+                                        }
+                                        s_users += "</table>";
+                                        t_users.innerHTML = s_users;
+                                }
++                       };
++
++                       ws.onclose = function() {
+...
+```
+
+This will be rewritten to reduce the lead-in to the normal 3
+
+```
+--- a/deaddrop.js
++++ b/deaddrop.js
+@@ -14,6 +14,11 @@
+                                        s_users += "</table>";
+                                        t_users.innerHTML = s_users;
+                                }
++                       };
++
++                       ws.onclose = function() {
+...
+```
+ 
  6. Excessive lead-out-context is removed, missing lead-out context is added.
     Diffs adding to EOF with missing or wrong context caused by
     LLM losing blank lines at the original EOF are rewritten by checking
     the original source file for extra lines and adding them as needed.
+
+Example 1: excessive led-out removed
+
+```
+...
+                                        s_users += "</table>";
+                                        t_users.innerHTML = s_users;
+                                }
++                       };
++
++                       ws.onclose = function() {
+                                var u = j.connected_users[n];
+                                s_users += "<tr><td>" + san(u.user) +
+                                        "</td><td>" + san(u.ip) +
+                                        "</td><td>" + san(u.platform) +
+                                        "</td><td>" + san(u.browser) +
+                                        "</td></tr>";
+```
+
+This will be trimmed to
+
+```
+...
+                                        s_users += "</table>";
+                                        t_users.innerHTML = s_users;
+                                }
++                       };
++
++                       ws.onclose = function() {
+                                var u = j.connected_users[n];
+                                s_users += "<tr><td>" + san(u.user) +
+                                        "</td><td>" + san(u.ip) +
+```
+
+Sometimes at EOT, the LLM does not know what is in the file properly, this leads
+to missing lead-out context.
+
+Example 2:  missing EOT context
+
+Actual file ending
+
+```
+...
+A
+B
+<cr>
+<cr>
+```
+
+patch:
+
+```
+--- a/deaddrop.js
++++ b/deaddrop.js
+@@ -14,6 +14,11 @@
+ A
+ B
++C
++D
+...
+```
+
+fixdiff will realize the situation and fix the stanza by fetching the extra 
+lines from the original file and adding them as context at the end.
+
+```
+--- a/deaddrop.js
++++ b/deaddrop.js
+@@ -14,6 +14,11 @@
+ A
+ B
++C
++D
+ <cr>
+ <cr>
+...
+```
+
  7. Unexpected blank lines in a stanza (without space, + or -) are either ignored
     if happening at the end of the stanza, or rewritten to be context by adding
     a space at the beginning, if the normal diff resumes.

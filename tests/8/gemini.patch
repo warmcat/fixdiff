@@ -1,0 +1,105 @@
+--- a/deaddrop.js
++++ b/deaddrop.js
+@@ -298,6 +298,7 @@
+ 	const initial_reconnect_delay = 1000;
+ 	const max_reconnect_delay = 30000;
+ 	let current_reconnect_delay = initial_reconnect_delay;
++	let reconnecting = false;
+ 
+ 	document.addEventListener("DOMContentLoaded", function() {
+ 		var da = document.getElementById("da"),
+@@ -321,12 +322,19 @@
+ 					da = document.getElementById("da");
+ 
+ 					/* We are connected, so reset the backoff delay */
++					reconnecting = false;
+ 					current_reconnect_delay = initial_reconnect_delay;
+ 
+ 					dd.classList.remove("noconn");
+ 					da.classList.remove("disa");
+ 				};
+ 
++				ws.onmessage = function got_packet(msg) {
++					var j,
++					    s_files = "", s_users = "", n,
++					    t_files = document.getElementById("dd-list"),
++					    t_users = document.getElementById("connected-users-list");
++
+ 				ws.onerror = function(ev) {
+ 					console.error("WebSocket error observed:", ev);
+ 				};
+@@ -336,12 +344,13 @@
+ 					    s_files = "", s_users = "", n,
+ 					    t_files = document.getElementById("dd-list"),
+ 					    t_users = document.getElementById("connected-users-list");
+-
+-				username = j.user || "";
+-				server_max_size = j.max_size;
+-				document.getElementById("size").innerHTML =
+-					"Server maximum file size " +
+-					humanize(j.max_size);
++					try {
++						j = JSON.parse(msg.data);
++					} catch (e) {
++						console.error("JSON parsing failed:", e);
++						console.log("Failing JSON data:", msg.data);
++						return;
++					}
+ 
++				username = j.user || "";
++				server_max_size = j.max_size;
++				document.getElementById("size").innerHTML =
++					"Server maximum file size " +
++					humanize(j.max_size);
+ 				s_files += "<table class=\"nb\">";
+ 				for (n = 0; n < j.files.length; n++) {
+ 					var fullName = j.files[n].name;
+@@ -349,7 +358,7 @@
+ 					 * The server is the single source of truth.
+ 					 * We trust the "yours" flag it sends us.
+ 					 */
+-					var isOwner = j.files[n].yours;
++					var isOwner = !!j.files[n].yours;
+ 
+ 					// Strip username prefix for display if owner
+ 					if (isOwner && username.length > 0)
+@@ -382,7 +391,7 @@
+ 				 * Render the list of connected users
+ 				 */
+ 				if (t_users && j.connected_users) {
+-					s_users += "<h3>Live Connections</h3>" +
++					s_users += "<h2>Live Connections</h2>" +
+ 						"<table class=\"nb\">" +
+ 						"<tr><th>User</th><th>IP Address</th>" +
+ 						"<th>Platform</th><th>Client</th></tr>";
+@@ -399,22 +408,24 @@
+ 				}
+ 			};
+ 
+-			ws.onclose = function() {
++			ws.onclose = function(ev) {
++				/* Prevent runaway reconnect loops */
++				if (reconnecting)
++					return;
++				reconnecting = true;
++
+ 	 			var dd = document.getElementById("ddrop"),
+ 				da = document.getElementById("da");
+ 				console.log("WebSocket closed. Reconnecting in " + (current_reconnect_delay / 1000) + " seconds...");
+ 
+ 				dd.classList.add("noconn");
+ 				da.classList.add("disa");
+ 
+-				/* Schedule the next reconnection attempt */
+-				setTimeout(connect_ws, current_reconnect_delay);
+-
+-				/* Apply exponential backoff */
+-				current_reconnect_delay = Math.min(max_reconnect_delay, current_reconnect_delay * 2);
++				/* Schedule the next reconnection attempt and then exit */
++				setTimeout(function() {
++					current_reconnect_delay = Math.min(max_reconnect_delay, current_reconnect_delay * 2);
++					connect_ws();
++				}, current_reconnect_delay);
+ 			};
+ 			} catch(exception) {
+ 				alert("<p>Error " + exception);
