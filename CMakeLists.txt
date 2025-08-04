@@ -15,7 +15,7 @@ install(PROGRAMS tools/concat.sh DESTINATION bin)
 
 # single patched file, directly taken from Gemini 2.5 copy button
 
-add_test(NAME lws1
+add_test(NAME fixdiff1
 	 COMMAND ${CMAKE_COMMAND}
 	 	-DCMD=$<TARGET_FILE:${PROJECT_NAME}>
 		-DSRC=client-parser-ws.c
@@ -27,7 +27,7 @@ add_test(NAME lws1
 
  # two concatenated single file patches
 
-add_test(NAME lws2
+add_test(NAME fixdiff2
 	 COMMAND ${CMAKE_COMMAND}
 	 	-DCMD=$<TARGET_FILE:${PROJECT_NAME}>
 		-DSRC=deaddrop.js
@@ -42,7 +42,7 @@ add_test(NAME lws2
 
  # two concatenated patches using git style diff and index lines (otherwise same as above)
 
- add_test(NAME lws3
+ add_test(NAME fixdiff3
 	 COMMAND ${CMAKE_COMMAND}
 	 	-DCMD=$<TARGET_FILE:${PROJECT_NAME}>
 		-DSRC=deaddrop.js
@@ -58,7 +58,7 @@ add_test(NAME lws2
  # two concatenated patches using git style diff and index lines with extra newline at end
  # (otherwise same as above)
 
- add_test(NAME lws4
+ add_test(NAME fixdiff4
 	 COMMAND ${CMAKE_COMMAND}
 	 	-DCMD=$<TARGET_FILE:${PROJECT_NAME}>
 		-DSRC=deaddrop.js
@@ -74,7 +74,7 @@ add_test(NAME lws2
  # Same as test1 but with 3 x examples of whitespace-only lines added that should be
  # reduced down to empty lines
 
-add_test(NAME lws5
+add_test(NAME fixdiff5
 	 COMMAND ${CMAKE_COMMAND}
 	 	-DCMD=$<TARGET_FILE:${PROJECT_NAME}>
 		-DSRC=client-parser-ws.c
@@ -84,7 +84,7 @@ add_test(NAME lws5
 		-P ${CMAKE_CURRENT_SOURCE_DIR}/tests/runtest.cmake
 	 WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/tests/5)
 
-add_test(NAME lws6
+add_test(NAME fixdiff6
 	 COMMAND ${CMAKE_COMMAND}
 	 	-DCMD=$<TARGET_FILE:${PROJECT_NAME}>
 		-DSRC=b-comms.c
@@ -93,5 +93,15 @@ add_test(NAME lws6
 		-DEXPSHA_WIN=2e6b9b12ae0128c9edfc109744b9c67848712b0521c322a45104895aa4cbc3b1
 		-P ${CMAKE_CURRENT_SOURCE_DIR}/tests/runtest.cmake
 	 WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/tests/6)
+
+add_test(NAME fixdiff7
+	 COMMAND ${CMAKE_COMMAND}
+	 	-DCMD=$<TARGET_FILE:${PROJECT_NAME}>
+		-DSRC=deaddrop.js
+		-DPATCH=gemini.patch
+		-DEXPSHA=1fc2b5b927ee6f4b3ee43d6d5db02c8f00322ea7b6b2a6e346d08faae82b4d3a
+		-DEXPSHA_WIN=2e6b9b12ae0128c9edfc109744b9c67848712b0521c322a45104895aa4cbc3b1
+		-P ${CMAKE_CURRENT_SOURCE_DIR}/tests/runtest.cmake
+	 WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/tests/7)
 
 

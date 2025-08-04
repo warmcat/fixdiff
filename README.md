@@ -32,17 +32,21 @@ headers with accurate line counts on stdout.
 
 It silently repairs:
 
- 1. new empty lines with only whitespace, by rewriting to blank lines
- 2. original lines in diff that differ from real line in file only by
+ 1. New empty + lines with only whitespace are rewritten to be empty blank lines
+ 2. Diff stanzas that do not contain any +/- lines are removed
+ 3. Original lines in diff that differ from real line in file only by
     whitespace are rewritten to contain the correct whitespace
- 3. wrong "before" line in original stanza header
- 4. wrong "before" line count in original stanza header
- 5. wrong "after" line in original stanza header
- 6. wrong "after" line count in original stanza header
- 7. extra lead-in context lines to stanza by removing until only 3
- 8. diffs adding to end of file with missing or wrong context caused by
+ 4. All stanza header line offsets and counts are recomputed from the actual
+    match in the original source and counting before and after lines in the diff,
+    the incoming @@ line is completely ignored and rewritten with actual info
+ 5. Extra lead-in context lines to stanza by removing until only 3
+ 6. Excessive lead-out-context is removed, missing lead-out context is added.
+    Diffs adding to EOF with missing or wrong context caused by
     LLM losing blank lines at the original EOF are rewritten by checking
-    the original source file for extra lines and adding them to the stanza as context)
+    the original source file for extra lines and adding them as needed.
+ 7. Unexpected blank lines in a stanza (without space, + or -) are either ignored
+    if happening at the end of the stanza, or rewritten to be context by adding
+    a space at the beginning, if the normal diff resumes.
 
 It finds and scans the sources the patches apply to and uses the diff stanza to
 find the original line it applied to by itself, along with the original line
