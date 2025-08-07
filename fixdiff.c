@@ -466,6 +466,17 @@ fixdiff_find_original(dp_t *pdp, int *line_start)
 				char *p1 = in_temp + 1, *p1_end = p1 + lt - 1 - (int)let,
 				     *p2 = in_src,      *p2_end = p2 + ls     - (int)les;
 
+			         /*
+				  * Let's trim back any trailing whitespace so that
+				  * either source or patch with it and the other not
+				  * doesn't trigger a mismatch
+				  */
+
+				while (p1_end > p1 && (p1_end[-1] == ' ' || p1_end[-1] == '\t'))
+					p1_end--;
+				while (p2_end > p2 && (p2_end[-1] == ' ' || p2_end[-1] == '\t'))
+					p2_end--;
+
 				while (p1 < p1_end && p2 < p2_end) {
 					char wst1 = 0, wst2 = 0;
 

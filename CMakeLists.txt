@@ -114,4 +114,14 @@ add_test(NAME fixdiff8
 		-P ${CMAKE_CURRENT_SOURCE_DIR}/tests/runtest.cmake
 	 WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/tests/8)
 
+add_test(NAME fixdiff9
+	 COMMAND ${CMAKE_COMMAND}
+	 	-DCMD=$<TARGET_FILE:${PROJECT_NAME}>
+		-DSRC=s-ws-builder.c
+		-DPATCH=gemini.patch
+		-DEXPSHA=ac6512d0861605b5dbea4c07e15faed64fab98742c7b9830ce6adfd0af077d09
+		-DEXPSHA_WIN=2e6b9b12ae0128c9edfc109744b9c67848712b0521c322a45104895aa4cbc3b1
+		-P ${CMAKE_CURRENT_SOURCE_DIR}/tests/runtest.cmake
+	 WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/tests/9)
+
 
